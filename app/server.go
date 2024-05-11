@@ -16,7 +16,7 @@ func main() {
 		fmt.Println("Failed to bind to port 4221")
 		os.Exit(1)
 	}
-	fmt.Printf("Listening on: %v", l.Addr().String())
+	fmt.Printf("Listening on: %v\n", l.Addr().String())
 
 	conn, err := l.Accept()
 	if err != nil {
@@ -29,6 +29,7 @@ func main() {
 }
 
 func handleConnection(c net.Conn) {
+	defer c.Close()
 	path, err := readPath(c)
 	if err != nil {
 		fmt.Println(err.Error())
@@ -41,12 +42,6 @@ func handleConnection(c net.Conn) {
 	} else {
 		writeResponse(c, 404)
 	}
-
-	err = c.Close()
-	if err != nil {
-		fmt.Println("Failed to close connection...", err.Error())
-		os.Exit(1)
-	}
 }
 
 func readPath(c net.Conn) (string, error) {
@@ -54,15 +49,13 @@ func readPath(c net.Conn) (string, error) {
 	if scanner.Scan() {
 		splits := strings.Split(scanner.Text(), " ")
 		if len(splits) < 2 {
-			return "", fmt.Errorf("Invalid request")
+			return "", fmt.Errorf("invalid request")
 		}
 		path := splits[1]
-		// read the rest of the request
-		scanner.Scan()
-		scanner.Scan()
+
 		return path, nil
 	}
-	return "", fmt.Errorf("Failed to read request")
+	return "", fmt.Errorf("failed to read request")
 }
 
 func writeResponse(c net.Conn, status int) {
@@ -71,7 +64,16 @@ func writeResponse(c net.Conn, status int) {
 		404: "Not Found",
 	}
 	const LINE_BREAK = "\r\n"
-	_, err := c.Write([]byte(fmt.Sprintf("HTTP/1.1 %d %s%s%s", status, responseString[status], LINE_BREAK, LINE_BREAK)))
+
+	var respBuilder strings.Builder
+
+	respBuilder.WriteString("HTTP/1.1")
+	respBuilder.WriteString(fmt.Sprintf(" %d ", status))
+	respBuilder.WriteString(responseString[status])
+	respBuilder.WriteString(LINE_BREAK)
+	respBuilder.WriteString(LINE_BREAK)
+
+	_, err := c.Write([]byte(respBuilder.String()))
 	if err != nil {
 		fmt.Println("Failed to write response...", err.Error())
 		os.Exit(1)
