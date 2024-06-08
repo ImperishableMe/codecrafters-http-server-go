@@ -25,7 +25,7 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("Accepted connection from: ", conn.RemoteAddr().String())
-		handleConnection(conn)
+		go handleConnection(conn)
 	}
 }
 
@@ -53,7 +53,7 @@ func handleConnection(c net.Conn) {
 		writeResponse(c, 200, userAgent)
 	} else if re.MatchString(path) {
 		str, _ := strings.CutPrefix(path, "/echo/")
-		fmt.Println("Echoing back: ", str)
+		fmt.Println("echoing back: ", str)
 		writeResponse(c, 200, str)
 	} else {
 		writeResponse(c, 404, "")
