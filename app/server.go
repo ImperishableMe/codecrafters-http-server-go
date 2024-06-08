@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -18,14 +19,15 @@ func main() {
 	}
 	fmt.Printf("Listening on: %v\n", l.Addr().String())
 
-	conn, err := l.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
+		}
+		fmt.Println("Accepted connection from: ", conn.RemoteAddr().String())
+		handleConnection(conn)
 	}
-	fmt.Println("Accepted connection from: ", conn.RemoteAddr().String())
-
-	handleConnection(conn)
 }
 
 func handleConnection(c net.Conn) {
@@ -36,11 +38,17 @@ func handleConnection(c net.Conn) {
 		os.Exit(1)
 	}
 	fmt.Println("Got request for path: ", path)
+	pattern := `^/echo/\w+$`
+	re := regexp.MustCompile(pattern)
 
 	if path == "/" {
-		writeResponse(c, 200)
+		writeResponse(c, 200, "")
+	} else if re.MatchString(path) {
+		str, _ := strings.CutPrefix(path, "/echo/")
+		fmt.Println("Echoing back: ", str)
+		writeResponse(c, 200, str)
 	} else {
-		writeResponse(c, 404)
+		writeResponse(c, 404, "")
 	}
 }
 
@@ -58,7 +66,7 @@ func readPath(c net.Conn) (string, error) {
 	return "", fmt.Errorf("failed to read request")
 }
 
-func writeResponse(c net.Conn, status int) {
+func writeResponse(c net.Conn, status int, body string) {
 	responseString := map[int]string{
 		200: "OK",
 		404: "Not Found",
@@ -71,7 +79,17 @@ func writeResponse(c net.Conn, status int) {
 	respBuilder.WriteString(fmt.Sprintf(" %d ", status))
 	respBuilder.WriteString(responseString[status])
 	respBuilder.WriteString(LINE_BREAK)
+	if body != "" {
+		respBuilder.WriteString(fmt.Sprintf("Content-Length: %d", len(body)))
+		respBuilder.WriteString(LINE_BREAK)
+		respBuilder.WriteString("Content-Type: text/plain")
+		respBuilder.WriteString(LINE_BREAK)
+	}
 	respBuilder.WriteString(LINE_BREAK)
+	if body != "" {
+		respBuilder.WriteString(body)
+		// respBuilder.WriteString(LINE_BREAK)
+	}
 
 	_, err := c.Write([]byte(respBuilder.String()))
 	if err != nil {
