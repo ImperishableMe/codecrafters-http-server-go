@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"net"
 	"os"
@@ -32,17 +31,26 @@ func main() {
 
 func handleConnection(c net.Conn) {
 	defer c.Close()
-	path, err := readPath(c)
+	request, err := parseRequest(c)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-	fmt.Println("Got request for path: ", path)
+
+	fmt.Println("Got request for path: ", request.Path)
+	path := request.Path
 	pattern := `^/echo/\w+$`
 	re := regexp.MustCompile(pattern)
 
 	if path == "/" {
 		writeResponse(c, 200, "")
+	} else if path == "/user-agent" {
+		userAgent, ok := request.Headers["user-agent"]
+		if !ok {
+			writeResponse(c, 400, "User-Agent header is required")
+			return
+		}
+		writeResponse(c, 200, userAgent)
 	} else if re.MatchString(path) {
 		str, _ := strings.CutPrefix(path, "/echo/")
 		fmt.Println("Echoing back: ", str)
@@ -50,20 +58,6 @@ func handleConnection(c net.Conn) {
 	} else {
 		writeResponse(c, 404, "")
 	}
-}
-
-func readPath(c net.Conn) (string, error) {
-	scanner := bufio.NewScanner(c)
-	if scanner.Scan() {
-		splits := strings.Split(scanner.Text(), " ")
-		if len(splits) < 2 {
-			return "", fmt.Errorf("invalid request")
-		}
-		path := splits[1]
-
-		return path, nil
-	}
-	return "", fmt.Errorf("failed to read request")
 }
 
 func writeResponse(c net.Conn, status int, body string) {
