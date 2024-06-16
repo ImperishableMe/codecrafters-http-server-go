@@ -7,22 +7,27 @@ import (
 	"strings"
 )
 
-func parseRequest(c net.Conn) (Request, error) {
-	/** Request line
-		GET /user-agent HTTP/1.1
-		// <EMPTY_LINE> Headers start next
-		Host: localhost:4221
-		User-Agent: foobar/1.2.3  // Read this value
-		Accept: ****
-		// <EMPTY_LINE> Body starts next
-		// Request body (empty)
-	**/
+type Request struct {
+	Path    string
+	Method  string
+	Headers map[string]string
+	Body    []byte
+}
 
-	scanner := bufio.NewScanner(c)
-	request := Request{
+func (r Request) string() string {
+	return fmt.Sprintf("Request{Path: %s, Method: %s, Headers: %v, Body: %s}", r.Path, r.Method, r.Headers, r.Body)
+}
+
+func newRequest() *Request {
+	return &Request{
 		Headers: make(map[string]string),
 		Body:    make([]byte, 0),
 	}
+}
+
+func parseRequest(c net.Conn) (*Request, error) {
+	scanner := bufio.NewScanner(c)
+	request := newRequest()
 
 	// parse request line
 	if scanner.Scan() {
@@ -36,18 +41,17 @@ func parseRequest(c net.Conn) (Request, error) {
 	// CLRF
 	ok := scanner.Scan()
 	if !ok {
-		return request, nil
+		return request, scanner.Err()
 	}
 
 	// parse headers
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		fmt.Println(line)
-
 		if line == "" {
 			break
 		}
+
 		splits := strings.Split(line, ": ")
 		header := strings.ToLower(splits[0])
 		value := splits[1]
@@ -60,5 +64,5 @@ func parseRequest(c net.Conn) (Request, error) {
 	// 	return request, nil
 	// }
 
-	return request, nil
+	return request, scanner.Err()
 }
