@@ -3,7 +3,8 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"net"
+	"io"
+	"strconv"
 	"strings"
 )
 
@@ -18,16 +19,16 @@ func (r Request) string() string {
 	return fmt.Sprintf("Request{Path: %s, Method: %s, Headers: %v, Body: %s}", r.Path, r.Method, r.Headers, r.Body)
 }
 
-func newRequest() *Request {
+func NewRequest() *Request {
 	return &Request{
 		Headers: make(map[string]string),
 		Body:    make([]byte, 0),
 	}
 }
 
-func parseRequest(c net.Conn) (*Request, error) {
-	scanner := bufio.NewScanner(c)
-	request := newRequest()
+func parseRequest(r io.Reader) (*Request, error) {
+	scanner := bufio.NewScanner(r)
+	request := NewRequest()
 
 	// parse request line
 	if scanner.Scan() {
@@ -65,4 +66,37 @@ func parseRequest(c net.Conn) (*Request, error) {
 	// }
 
 	return request, scanner.Err()
+}
+
+type Response struct {
+	ContentType string
+	Headers     map[string]string
+	Body        []byte
+	Status      int
+}
+
+func writeResponse(wc io.WriteCloser, response Response) {
+	defer wc.Close()
+
+	statusDescription := map[int]string{
+		200: "OK",
+		404: "Not Found",
+	}
+	status := response.Status
+	body := response.Body
+	if response.Headers == nil {
+		response.Headers = make(map[string]string)
+	}
+	header := response.Headers
+
+	fmt.Fprintf(wc, "HTTP/1.1 %d %s \r\n", status, statusDescription[status])
+	header["content-length"] = strconv.Itoa(len(body)) // override the `content-length` header
+
+	for k, v := range header {
+		fmt.Fprintf(wc, "%s: %s\r\n", k, v)
+	}
+	fmt.Fprintf(wc, "\r\n")
+	if body != nil {
+		wc.Write(body)
+	}
 }
