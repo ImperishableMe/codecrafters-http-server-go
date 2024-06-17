@@ -9,17 +9,16 @@ import (
 	"strings"
 )
 
-var FILE_ROOT string
+var FILE_ROOT = "/tmp"
 
 func main() {
 	fmt.Println("Logs from your program will appear here!")
 
-	fmt.Println("Command line directory", os.Args[2])
 	if len(os.Args) < 3 {
-		fmt.Println("No directory for files")
-		os.Exit(1)
+		fmt.Println("No directory for files. Using default directory /tmp")
+	} else {
+		FILE_ROOT = os.Args[2]
 	}
-	FILE_ROOT = os.Args[2]
 
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {

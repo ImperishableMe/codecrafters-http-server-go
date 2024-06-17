@@ -89,7 +89,7 @@ func writeResponse(wc io.WriteCloser, response Response) {
 	}
 	header := response.Headers
 
-	fmt.Fprintf(wc, "HTTP/1.1 %d %s \r\n", status, statusDescription[status])
+	fmt.Fprintf(wc, "HTTP/1.1 %d %s\r\n", status, statusDescription[status])
 	header["content-length"] = strconv.Itoa(len(body)) // override the `content-length` header
 
 	for k, v := range header {
