@@ -15,10 +15,6 @@ type Request struct {
 	Body    []byte
 }
 
-func (r Request) string() string {
-	return fmt.Sprintf("Request{Path: %s, Method: %s, Headers: %v, Body: %s}", r.Path, r.Method, r.Headers, r.Body)
-}
-
 func NewRequest() *Request {
 	return &Request{
 		Headers: make(map[string]string),
@@ -68,35 +64,54 @@ func parseRequest(r io.Reader) (*Request, error) {
 	return request, scanner.Err()
 }
 
-type Response struct {
-	ContentType string
-	Headers     map[string]string
-	Body        []byte
-	Status      int
+type Headers map[string]string
+
+type ResponseWriter interface {
+	WriteHeader(status int)
+	Write([]byte) (int, error)
+	Headers() Headers
 }
 
-func writeResponse(wc io.WriteCloser, response Response) {
-	defer wc.Close()
+type Handler func(*Request, ResponseWriter)
 
+type Response struct {
+	headers     Headers
+	writer      io.Writer
+	wroteHeader bool
+}
+
+func (r *Response) Headers() Headers {
+	return r.headers
+}
+
+func (r *Response) WriteHeader(status int) {
+	if status != 200 && status != 404 {
+		status = 500 // fallback status for now. Not needed for the tasks.
+	}
 	statusDescription := map[int]string{
 		200: "OK",
+		400: "Bad Request",
 		404: "Not Found",
+		500: "Unknown",
 	}
-	status := response.Status
-	body := response.Body
-	if response.Headers == nil {
-		response.Headers = make(map[string]string)
-	}
-	header := response.Headers
+	fmt.Fprintf(r.writer, "HTTP/1.1 %d %s\r\n", status, statusDescription[status])
 
-	fmt.Fprintf(wc, "HTTP/1.1 %d %s\r\n", status, statusDescription[status])
-	header["content-length"] = strconv.Itoa(len(body)) // override the `content-length` header
+	headers := r.headers
+	for k, v := range headers {
+		fmt.Fprintf(r.writer, "%s: %s\r\n", k, v)
+	}
+	fmt.Fprintf(r.writer, "\r\n")
+	r.wroteHeader = true
+}
 
-	for k, v := range header {
-		fmt.Fprintf(wc, "%s: %s\r\n", k, v)
+func (r *Response) Write(p []byte) (int, error) {
+	if !r.wroteHeader {
+		r.headers["Content-Length"] = strconv.Itoa(len(p))
+		_, exist := r.headers["Content-Type"]
+		if !exist {
+			r.headers["Content-Type"] = "text/plain"
+		}
+		r.WriteHeader(200)
 	}
-	fmt.Fprintf(wc, "\r\n")
-	if body != nil {
-		wc.Write(body)
-	}
+	return r.writer.Write(p)
 }

@@ -39,63 +39,62 @@ func main() {
 }
 
 func handleConnection(rwc io.ReadWriteCloser) {
+	defer rwc.Close()
 	request, err := parseRequest(rwc)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-
 	fmt.Println("Got request for path: ", request.Path)
-	path := request.Path
 
+	response := &Response{
+		headers: make(Headers),
+		writer:  rwc,
+	}
+	handler := getHandler(request.Path)
+	handler(request, response)
+
+}
+
+func getHandler(path string) Handler {
 	if path == "/" {
-		writeResponse(rwc, Response{
-			Status: 200,
-			Body:   []byte(""),
-		})
-	} else if path == "/user-agent" {
-		userAgent, ok := request.Headers["user-agent"]
-		if !ok {
-			writeResponse(rwc, Response{
-				Status: 400,
-				Body:   []byte("User-Agent header is required"),
-			})
-			return
+		return func(r *Request, w ResponseWriter) {
+			w.Write([]byte(""))
 		}
-		writeResponse(rwc, Response{
-			Status:  200,
-			Body:    []byte(userAgent),
-			Headers: map[string]string{"content-type": "text/plain"},
-		})
+	} else if path == "/user-agent" {
+		return func(r *Request, w ResponseWriter) {
+			userAgent, ok := r.Headers["user-agent"]
+			if !ok {
+				w.WriteHeader(400)
+				w.Write([]byte("User-Agent header is required"))
+				return
+			}
+			w.Write([]byte(userAgent))
+		}
 	} else if strings.HasPrefix(path, "/echo/") {
 		str, _ := strings.CutPrefix(path, "/echo/")
 		fmt.Println("echoing back: ", str)
-		writeResponse(rwc, Response{
-			Status:  200,
-			Body:    []byte(str),
-			Headers: map[string]string{"content-type": "text/plain"},
-		})
+
+		return func(r *Request, w ResponseWriter) {
+			w.Write([]byte(str))
+		}
 	} else if strings.HasPrefix(path, "/files/") {
 		path, _ := strings.CutPrefix(path, "/files/")
 		fmt.Println("Asking for file ", path)
-		filePath := filepath.Join(FILE_ROOT, path)
-		fileBody, err := os.ReadFile(filePath)
-		if err != nil {
-			writeResponse(rwc, Response{
-				Status: 404,
-			})
-			return
+		return func(r *Request, w ResponseWriter) {
+			filePath := filepath.Join(FILE_ROOT, path)
+			fileBody, err := os.ReadFile(filePath)
+			if err != nil {
+				w.WriteHeader(404)
+				w.Write(nil)
+				return
+			}
+			w.Headers()["Content-Type"] = "application/octet-stream"
+			w.Write(fileBody)
 		}
-		writeResponse(rwc, Response{
-			Status: 200,
-			Body: fileBody,
-			Headers: map[string]string{
-				"content-type": "application/octet-stream",
-			},
-		})
 	} else {
-		writeResponse(rwc, Response{
-			Status: 404,
-		})
+		return func(r *Request, w ResponseWriter) {
+			w.WriteHeader(404)
+		}
 	}
 }
