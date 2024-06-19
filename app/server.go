@@ -14,13 +14,106 @@ var FILE_ROOT = "/tmp"
 func main() {
 	fmt.Println("Logs from your program will appear here!")
 
-	if len(os.Args) < 3 {
-		fmt.Println("No directory for files. Using default directory /tmp")
-	} else {
-		FILE_ROOT = os.Args[2]
+	serverOptions := ServerOptions{}
+	if len(os.Args) >= 3 {
+		serverOptions.FileServerRoot = os.Args[2]
 	}
+	s := NewServer(serverOptions)
 
-	l, err := net.Listen("tcp", "0.0.0.0:4221")
+	// Register the handlers
+	s.Register("GET /", func(r *Request, w ResponseWriter) {
+		w.Write([]byte(""))
+	})
+	s.Register("GET /user-agent", func(r *Request, w ResponseWriter) {
+		userAgent, ok := r.Headers["user-agent"]
+		if !ok {
+			w.WriteHeader(400)
+			w.Write([]byte("User-Agent header is required"))
+			return
+		}
+		w.Write([]byte(userAgent))
+	})
+	s.Register("GET /echo/{str}", func(r *Request, w ResponseWriter) {
+		str, _ := strings.CutPrefix(r.Path, "/echo/")
+		fmt.Println("echoing back: ", str)
+		w.Write([]byte(str))
+	})
+	s.Register("GET /files/{path}", func(r *Request, w ResponseWriter) {
+		path, _ := strings.CutPrefix(r.Path, "/files/")
+		fmt.Println("Asking for file ", path)
+		filePath := filepath.Join(s.fileServerRoot, path)
+		fileBody, err := os.ReadFile(filePath)
+		if err != nil {
+			w.WriteHeader(404)
+			w.Write(nil)
+			return
+		}
+		w.Headers()["Content-Type"] = "application/octet-stream"
+		w.Write(fileBody)
+	})
+
+	s.ListenAndServe()
+}
+
+type Handler struct {
+	pat     pattern
+	handler HandlerFunc
+}
+
+func isWild(s string) bool {
+	return len(s) >= 2 && string(s[0]) == "{" && string(s[len(s)-1]) == "}"
+}
+
+func (h Handler) matches(pat pattern) bool {
+	fmt.Println("Trying to match ", h.pat, pat)
+	if h.pat.method != pat.method {
+		return false
+	}
+	segs1, segs2 := h.pat.segments, pat.segments
+	i, j := 0, 0
+	for ; i < len(segs1) && j < len(segs2); i, j = i+1, j+1 {
+		if segs1[i] == segs2[j] || isWild(segs1[i]) {
+			continue
+		}
+		return false
+	}
+	return i == j
+}
+
+type Server struct {
+	fileServerRoot string
+	handlers       []Handler
+	port           int
+}
+
+func NewServer(options ServerOptions) Server {
+	if options.FileServerRoot == "" {
+		options.FileServerRoot = "/tmp/"
+	}
+	// I know, it's ugly, right? Anyway, life goes on!
+	if options.Port == 0 {
+		options.Port = 4221
+	}
+	return Server{
+		fileServerRoot: options.FileServerRoot,
+		handlers:       make([]Handler, 0),
+		port:           options.Port,
+	}
+}
+
+func (s *Server) Register(pat string, h HandlerFunc) error {
+	p, err := fromString(pat)
+	fmt.Println("Added pattern ", len(p.segments), p.method, p.segments)
+	if err != nil {
+		return err
+	}
+	s.handlers = append(s.handlers, Handler{pat: p, handler: h})
+	fmt.Println(len(s.handlers), " ", pat)
+	return nil
+}
+
+func (s *Server) ListenAndServe() {
+	l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", s.port))
 	if err != nil {
 		fmt.Println("Failed to bind to port 4221")
 		os.Exit(1)
@@ -34,11 +127,11 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("Accepted connection from: ", conn.RemoteAddr().String())
-		go handleConnection(conn)
+		go s.Serve(conn)
 	}
 }
 
-func handleConnection(rwc io.ReadWriteCloser) {
+func (s *Server) Serve(rwc io.ReadWriteCloser) {
 	defer rwc.Close()
 	request, err := parseRequest(rwc)
 	if err != nil {
@@ -51,50 +144,46 @@ func handleConnection(rwc io.ReadWriteCloser) {
 		headers: make(Headers),
 		writer:  rwc,
 	}
-	handler := getHandler(request.Path)
+	handler := s.findHandler(request.Method + " " + request.Path)
 	handler(request, response)
-
 }
 
-func getHandler(path string) Handler {
-	if path == "/" {
-		return func(r *Request, w ResponseWriter) {
-			w.Write([]byte(""))
-		}
-	} else if path == "/user-agent" {
-		return func(r *Request, w ResponseWriter) {
-			userAgent, ok := r.Headers["user-agent"]
-			if !ok {
-				w.WriteHeader(400)
-				w.Write([]byte("User-Agent header is required"))
-				return
-			}
-			w.Write([]byte(userAgent))
-		}
-	} else if strings.HasPrefix(path, "/echo/") {
-		str, _ := strings.CutPrefix(path, "/echo/")
-		fmt.Println("echoing back: ", str)
-
-		return func(r *Request, w ResponseWriter) {
-			w.Write([]byte(str))
-		}
-	} else if strings.HasPrefix(path, "/files/") {
-		path, _ := strings.CutPrefix(path, "/files/")
-		fmt.Println("Asking for file ", path)
-		return func(r *Request, w ResponseWriter) {
-			filePath := filepath.Join(FILE_ROOT, path)
-			fileBody, err := os.ReadFile(filePath)
-			if err != nil {
-				w.WriteHeader(404)
-				w.Write(nil)
-				return
-			}
-			w.Headers()["Content-Type"] = "application/octet-stream"
-			w.Write(fileBody)
-		}
-	} else {
-		return func(r *Request, w ResponseWriter) {
-			w.WriteHeader(404)
+func (s *Server) findHandler(path string) HandlerFunc {
+	pat, err := fromString(path)
+	if err != nil {
+		return NotFoundHandler
+	}
+	fmt.Println("trying to match pattern..", pat)
+	for _, h := range s.handlers {
+		if h.matches(pat) {
+			return h.handler
 		}
 	}
+	return NotFoundHandler
+}
+
+var NotFoundHandler = func(r *Request, w ResponseWriter) {
+	w.WriteHeader(404)
+}
+
+type ServerOptions struct {
+	FileServerRoot string
+	Port           int
+}
+
+type pattern struct {
+	method   string
+	segments []string
+}
+
+func fromString(pat string) (pattern, error) {
+	splits := strings.Split(pat, " ")
+	if len(splits) < 2 {
+		return pattern{}, fmt.Errorf("pattern: %s does not have <VERB PATH> form", pat)
+	}
+	verb, path := splits[0], splits[1]
+	return pattern{
+		method:   verb,
+		segments: strings.Split(path, "/"),
+	}, nil
 }

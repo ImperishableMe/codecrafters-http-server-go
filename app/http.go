@@ -8,6 +8,14 @@ import (
 	"strings"
 )
 
+type Headers map[string]string
+type ResponseWriter interface {
+	WriteHeader(status int)
+	Write([]byte) (int, error)
+	Headers() Headers
+}
+type HandlerFunc func(*Request, ResponseWriter)
+
 type Request struct {
 	Path    string
 	Method  string
@@ -63,16 +71,6 @@ func parseRequest(r io.Reader) (*Request, error) {
 
 	return request, scanner.Err()
 }
-
-type Headers map[string]string
-
-type ResponseWriter interface {
-	WriteHeader(status int)
-	Write([]byte) (int, error)
-	Headers() Headers
-}
-
-type Handler func(*Request, ResponseWriter)
 
 type Response struct {
 	headers     Headers
