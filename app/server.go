@@ -65,7 +65,6 @@ func isWild(s string) bool {
 }
 
 func (h Handler) matches(pat pattern) bool {
-	fmt.Println("Trying to match ", h.pat, pat)
 	if h.pat.method != pat.method {
 		return false
 	}
@@ -108,7 +107,6 @@ func (s *Server) Register(pat string, h HandlerFunc) error {
 		return err
 	}
 	s.handlers = append(s.handlers, Handler{pat: p, handler: h})
-	fmt.Println(len(s.handlers), " ", pat)
 	return nil
 }
 
