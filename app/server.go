@@ -6,10 +6,9 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
-
-var FILE_ROOT = "/tmp"
 
 func main() {
 	fmt.Println("Logs from your program will appear here!")
@@ -51,6 +50,35 @@ func main() {
 		w.Headers()["Content-Type"] = "application/octet-stream"
 		w.Write(fileBody)
 	})
+	s.Register("POST /files/{path}", func(r *Request, w ResponseWriter) {
+		fmt.Println(r.Headers)
+		path, _ := strings.CutPrefix(r.Path, "/files/")
+		filePath := filepath.Join(s.fileServerRoot, path)
+		file, err := os.Create(filePath)
+		if err != nil {
+			w.WriteHeader(400)
+			return
+		}
+		defer file.Close()
+
+		lenStr, ok := r.GetHeader("Content-Length")
+		if !ok {
+			w.WriteHeader(400)
+			w.Write([]byte("missing Content-Length header."))
+			return
+		}
+		fileSize, _ := strconv.Atoi(lenStr)
+		fmt.Println("Reading total file size of ", fileSize)
+
+		written, err := io.CopyN(file, r.Body, int64(fileSize))
+		fmt.Println("Read ", written, " bytes")
+		if err != nil || written != int64(fileSize) {
+			w.WriteHeader(400)
+			w.Write([]byte(fmt.Sprintf("couldn't write the whole content. Wrote %d, expected %d", written, fileSize)))
+			return
+		}
+		w.WriteHeader(201)
+	})
 
 	s.ListenAndServe()
 }
@@ -89,7 +117,7 @@ func NewServer(options ServerOptions) Server {
 	if options.FileServerRoot == "" {
 		options.FileServerRoot = "/tmp/"
 	}
-	// I know, it's ugly, right? Anyway, life goes on!
+	// I know, it's ugly! Anyway, life goes on!
 	if options.Port == 0 {
 		options.Port = 4221
 	}
@@ -130,7 +158,10 @@ func (s *Server) ListenAndServe() {
 }
 
 func (s *Server) Serve(rwc io.ReadWriteCloser) {
-	defer rwc.Close()
+	defer func() {
+		fmt.Println("Closing down the request")
+		rwc.Close()
+	}()
 	request, err := parseRequest(rwc)
 	if err != nil {
 		fmt.Println(err.Error())

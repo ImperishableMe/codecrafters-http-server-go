@@ -20,56 +20,55 @@ type Request struct {
 	Path    string
 	Method  string
 	Headers map[string]string
-	Body    []byte
+	Body    io.Reader
 }
 
 func NewRequest() *Request {
 	return &Request{
 		Headers: make(map[string]string),
-		Body:    make([]byte, 0),
 	}
 }
 
+func (r *Request) GetHeader(key string) (string, bool) {
+	val, ok := r.Headers[strings.ToLower(key)]
+	return val, ok
+}
+
 func parseRequest(r io.Reader) (*Request, error) {
-	scanner := bufio.NewScanner(r)
+	bufR := bufio.NewReader(r)
 	request := NewRequest()
 
 	// parse request line
-	if scanner.Scan() {
-		splits := strings.Split(scanner.Text(), " ")
-		if len(splits) < 2 {
-			return request, fmt.Errorf("invalid request")
-		}
-		request.Method = splits[0]
-		request.Path = splits[1]
+	requestLine, err := bufR.ReadString('\n')
+	if err != nil {
+		return request, err
 	}
-	// CLRF
-	ok := scanner.Scan()
-	if !ok {
-		return request, scanner.Err()
+	splits := strings.Split(strings.Trim(requestLine, "\r\n"), " ")
+	if len(splits) < 2 {
+		return request, fmt.Errorf("invalid request")
 	}
+	request.Method = splits[0]
+	request.Path = splits[1]
 
 	// parse headers
-	for scanner.Scan() {
-		line := scanner.Text()
-
+	for {
+		line, err := bufR.ReadString('\n')
+		if err != nil {
+			return request, err
+		}
+		line = strings.Trim(line, "\r\n")
 		if line == "" {
 			break
 		}
-
 		splits := strings.Split(line, ": ")
 		header := strings.ToLower(splits[0])
 		value := splits[1]
-		fmt.Println("Adding header: ", header, " with value: ", value)
+		fmt.Println("Adding header ", header, ": ", value)
 		request.Headers[header] = value
 	}
-	// CLRF
-	// ok = scanner.Scan()
-	// if !ok {
-	// 	return request, nil
-	// }
 
-	return request, scanner.Err()
+	request.Body = bufR
+	return request, nil
 }
 
 type Response struct {
@@ -83,11 +82,9 @@ func (r *Response) Headers() Headers {
 }
 
 func (r *Response) WriteHeader(status int) {
-	if status != 200 && status != 404 {
-		status = 500 // fallback status for now. Not needed for the tasks.
-	}
 	statusDescription := map[int]string{
 		200: "OK",
+		201: "Created",
 		400: "Bad Request",
 		404: "Not Found",
 		500: "Unknown",
