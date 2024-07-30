@@ -99,7 +99,17 @@ func (s *Server) Serve(rwc io.ReadWriteCloser) {
 		writer:  rwc,
 	}
 	handler := s.findHandler(request.Method + " " + request.Path)
-	handler(request, response)
+	gzipper(request, response, handler)
+}
+
+var gzipper = func(r *Request, w ResponseWriter, f HandlerFunc) {
+	enc, ok := r.GetHeader("accept-encoding")
+	if !ok || enc != "gzip" {
+		f(r, w)
+		return
+	}
+	w.Headers()["Content-Encoding"] = enc
+	f(r, w)
 }
 
 func (s *Server) findHandler(path string) HandlerFunc {
