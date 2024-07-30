@@ -103,12 +103,18 @@ func (s *Server) Serve(rwc io.ReadWriteCloser) {
 }
 
 var gzipper = func(r *Request, w ResponseWriter, f HandlerFunc) {
-	enc, ok := r.GetHeader("accept-encoding")
-	if !ok || enc != "gzip" {
+	encodings, _ := r.GetHeader("accept-encoding")
+	gZipFound := false
+	for _, enc := range encodings {
+		if enc == "gzip" {
+			gZipFound = true
+		}
+	}
+	if !gZipFound {
 		f(r, w)
 		return
 	}
-	w.Headers()["Content-Encoding"] = enc
+	w.Headers()["Content-Encoding"] = "gzip"
 	f(r, w)
 }
 
