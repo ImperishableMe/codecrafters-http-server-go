@@ -99,7 +99,7 @@ func (s *Server) Serve(rwc io.ReadWriteCloser) {
 		writer:  rwc,
 	}
 	handler := s.findHandler(request.Method + " " + request.Path)
-	gzipper(request, response, handler)
+	gzipMiddleware(handler).ServeHttp(request, response)
 }
 
 func (s *Server) findHandler(path string) Handler {
