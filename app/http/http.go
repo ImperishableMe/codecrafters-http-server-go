@@ -6,13 +6,21 @@ import (
 	"strconv"
 )
 
+type Handler interface {
+	ServeHttp(*Request, ResponseWriter)
+}
 type Headers map[string]string
 type ResponseWriter interface {
 	WriteHeader(status int)
 	Write([]byte) (int, error)
 	Headers() Headers
 }
+
 type HandlerFunc func(*Request, ResponseWriter)
+
+func (h HandlerFunc) ServeHttp(request *Request, writer ResponseWriter) {
+	h(request, writer)
+}
 
 type Response struct {
 	headers     Headers
@@ -23,7 +31,6 @@ type Response struct {
 func (r *Response) Headers() Headers {
 	return r.headers
 }
-
 func (r *Response) WriteHeader(status int) {
 	statusDescription := map[int]string{
 		200: "OK",
@@ -41,7 +48,6 @@ func (r *Response) WriteHeader(status int) {
 	fmt.Fprintf(r.writer, "\r\n")
 	r.wroteHeader = true
 }
-
 func (r *Response) Write(p []byte) (int, error) {
 	if !r.wroteHeader {
 		r.headers["Content-Length"] = strconv.Itoa(len(p))

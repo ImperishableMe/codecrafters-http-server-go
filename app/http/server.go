@@ -8,16 +8,16 @@ import (
 	"strings"
 )
 
-type Handler struct {
+type HandlerNode struct {
 	pat     pattern
-	handler HandlerFunc
+	handler Handler
 }
 
 func isWild(s string) bool {
 	return len(s) >= 2 && string(s[0]) == "{" && string(s[len(s)-1]) == "}"
 }
 
-func (h Handler) matches(pat pattern) bool {
+func (h HandlerNode) matches(pat pattern) bool {
 	if h.pat.method != pat.method {
 		return false
 	}
@@ -34,7 +34,7 @@ func (h Handler) matches(pat pattern) bool {
 
 type Server struct {
 	FileServerRoot string
-	Handlers       []Handler
+	Handlers       []HandlerNode
 	Port           int
 }
 
@@ -48,19 +48,19 @@ func NewServer(options ServerOptions) Server {
 	}
 	return Server{
 		FileServerRoot: options.FileServerRoot,
-		Handlers:       make([]Handler, 0),
+		Handlers:       make([]HandlerNode, 0),
 		Port:           options.Port,
 	}
 }
 
-func (s *Server) Register(pat string, h HandlerFunc) {
+func (s *Server) Register(pat string, h Handler) {
 	p, err := fromString(pat)
 	fmt.Println("Added pattern ", len(p.segments), p.method, p.segments)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	s.Handlers = append(s.Handlers, Handler{pat: p, handler: h})
+	s.Handlers = append(s.Handlers, HandlerNode{pat: p, handler: h})
 }
 
 func (s *Server) ListenAndServe() {
@@ -102,26 +102,10 @@ func (s *Server) Serve(rwc io.ReadWriteCloser) {
 	gzipper(request, response, handler)
 }
 
-var gzipper = func(r *Request, w ResponseWriter, f HandlerFunc) {
-	encodings, _ := r.GetHeader("accept-encoding")
-	gZipFound := false
-	for _, enc := range encodings {
-		if enc == "gzip" {
-			gZipFound = true
-		}
-	}
-	if !gZipFound {
-		f(r, w)
-		return
-	}
-	w.Headers()["Content-Encoding"] = "gzip"
-	f(r, w)
-}
-
-func (s *Server) findHandler(path string) HandlerFunc {
+func (s *Server) findHandler(path string) Handler {
 	pat, err := fromString(path)
 	if err != nil {
-		return NotFoundHandler
+		return NotFoundHandler()
 	}
 	fmt.Println("trying to match pattern..", pat)
 	for _, h := range s.Handlers {
@@ -129,11 +113,15 @@ func (s *Server) findHandler(path string) HandlerFunc {
 			return h.handler
 		}
 	}
-	return NotFoundHandler
+	return NotFoundHandler()
 }
 
-var NotFoundHandler = func(r *Request, w ResponseWriter) {
+var NotFound = func(r *Request, w ResponseWriter) {
 	w.WriteHeader(404)
+}
+
+func NotFoundHandler() Handler {
+	return HandlerFunc(NotFound)
 }
 
 type ServerOptions struct {
