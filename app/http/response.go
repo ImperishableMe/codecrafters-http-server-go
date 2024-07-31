@@ -69,10 +69,6 @@ func (g GzipResponseWriter) Write(p []byte) (int, error) {
 	}
 
 	compressed := b.Bytes()
-	g.w.Headers()["Content-Length"] = fmt.Sprintf("%d", len(compressed))
-	if !g.wroteHeader {
-		g.WriteHeader(200)
-	}
 	return g.w.Write(compressed)
 }
 
