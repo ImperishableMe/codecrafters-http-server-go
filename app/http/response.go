@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -47,7 +48,6 @@ func (r *Response) Write(p []byte) (int, error) {
 
 type GzipResponseWriter struct {
 	w           ResponseWriter
-	gw          io.WriteCloser
 	wroteHeader bool
 }
 
@@ -57,16 +57,23 @@ func (g GzipResponseWriter) WriteHeader(status int) {
 }
 
 func (g GzipResponseWriter) Write(p []byte) (int, error) {
+	var b bytes.Buffer
+	gw := gzip.NewWriter(&b)
+	_, err := gw.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	err = gw.Close()
+	if err != nil {
+		fmt.Println("Error closing gzip writer:", err)
+	}
+
+	compressed := b.Bytes()
+	g.w.Headers()["Content-Length"] = fmt.Sprintf("%d", len(compressed))
 	if !g.wroteHeader {
 		g.WriteHeader(200)
 	}
-	defer func(gw io.WriteCloser) {
-		err := gw.Close()
-		if err != nil {
-			fmt.Println("Error closing gzip writer:", err)
-		}
-	}(g.gw)
-	return g.gw.Write(p)
+	return g.w.Write(compressed)
 }
 
 func (g GzipResponseWriter) Headers() Headers {
@@ -74,6 +81,5 @@ func (g GzipResponseWriter) Headers() Headers {
 }
 
 func NewGzipResponseWriter(w ResponseWriter) GzipResponseWriter {
-	gw := gzip.NewWriter(w)
-	return GzipResponseWriter{w: w, gw: gw}
+	return GzipResponseWriter{w: w}
 }
