@@ -53,14 +53,14 @@ func NewServer(options ServerOptions) Server {
 	}
 }
 
-func (s *Server) Register(pat string, h HandlerFunc) error {
+func (s *Server) Register(pat string, h HandlerFunc) {
 	p, err := fromString(pat)
 	fmt.Println("Added pattern ", len(p.segments), p.method, p.segments)
 	if err != nil {
-		return err
+		fmt.Println(err)
+		return
 	}
 	s.Handlers = append(s.Handlers, Handler{pat: p, handler: h})
-	return nil
 }
 
 func (s *Server) ListenAndServe() {
